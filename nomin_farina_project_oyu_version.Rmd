@@ -1,0 +1,962 @@
+# Spotify top hits 1999-2019: REPORT
+
+**Analysis of the Spotify Top Hits from 1999 to 2019.**
+
+Georgiy Farina, Enkh-Oyu Nomin, SUPSI-DTI DS&AI 2nd year 2022/2023
+
+## Introduction and problem setting
+
+The dataset analysed for this project is the Spotify Top Hits collection of songs, found on [Kaggle](https://www.kaggle.com/datasets/paradisejoy/top-hits-spotify-from-20002019 "Spotify top hits 2000-2019"), between years 1999-2019. Originally it consists of 18 columns and 2000 rows, roughly 100 for each year. The features in the dataset are the following:
+
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| Feature name     | Description                                                      | Range of values                                                                                                     |
++==================+==================================================================+=====================================================================================================================+
+| artist           | Name of the artist / band                                        |                                                                                                                     |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| song             | Name of the song                                                 |                                                                                                                     |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| duration_ms      | Duration of a song in milliseconds                               |                                                                                                                     |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| explicit         | Indicates if a song is explicit or not                           | False / True                                                                                                        |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| year             | Release year of the song                                         |                                                                                                                     |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| popularity       | Popularity of the song                                           | From 0 to 100                                                                                                       |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| danceability     | Danceability of the song                                         | From 0 to 1                                                                                                         |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| energy           | Perceptual intensity and activity                                | From 0 to 1                                                                                                         |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| key              | The key the song is in based on the Pitch Class notation         | C = 0, C-sharp = 1, D = 2, D-sharp = 3, E = 4, F = 5, F-sharp = 6, G = 7, G-sharp = 8, A = 9, B-flat = 10, B = 11   |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| loudness         | Overall loudness of a song in decibels                           | From -60 to 0                                                                                                       |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| mode             | Modality of the song                                             | 0 = minor, 1 = major                                                                                                |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| speechiness      | Presence of spoken words in a song                               | 0 - 0.33 -\> music and other non-speech-like songs                                                                  |
+|                  |                                                                  |                                                                                                                     |
+|                  |                                                                  | 0.33 - 0.66 -\> may contain both music and speech (e.g: rap music)                                                  |
+|                  |                                                                  |                                                                                                                     |
+|                  |                                                                  | 0.66 - 1 -\> made entirely of spoken words                                                                          |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| acousticness     | Confidence measure of whether the song is acoustic               | From 0 to 1                                                                                                         |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| instrumentalness | Prediction of the song containing vocals on a scale              | From 0 to 1. A word is a vocal, but "ooh" or "aah" are not. 1 means that the song is instrumental                   |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| liveness         | Presence of an audience in the recording                         | From 0 to 1                                                                                                         |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| valence          | Measure representing the musical positiveness conveyed by a song | High values sound more positive (happy, cheerful, euphoric), Low values sound more negative (sad, depressed, angry) |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| tempo            | Overall estimated tempo of a song in BPM (beats per minute)      |                                                                                                                     |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+| genre            | Genre/s of a song                                                | More than 1 genre can be associated to a single song                                                                |
++------------------+------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------------------+
+
+Based on the features present in the dataset, we wanted the following questions answered:
+
+1.  Which artists were the most consistent throughout the years, meaning which ones had most hit songs in the charts?
+
+2.  What is the average popularity of the top artists in the previous point?
+
+3.  What genres are the most present and what is their average popularity?
+
+4.  What are the top 10 songs in terms of popularity and is there a correlation between those songs and their valence?
+
+5.  If and how did the duration of the songs change throughout the years?
+
+6.  Is there a correlation between popularity and some features in the dataset?
+
+The aforementioned are the questions that we wanted answered by performing exploratory data analysis, whereas the following are the two tasks we want to perform by applying regression and classification models:
+
+1.  Predicting the popularity of a song
+
+2.  Predicting whether a song is to be considered explicit or not
+
+## Data cleaning and exploration
+
+### Loading libraries and dataset
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(corrplot)
+library(gridExtra)
+library(tidymodels)
+library(dplyr)
+library(tidyr)
+library(randomForest)
+library(performance)
+data <- read_csv('songs_normalize.csv')
+data <- as_tibble(data)
+summary(data)
+```
+
+### Null values and duplicated rows
+
+Here duplicates are removed, null values are checked and variables are manipulated to be more comprehensible and manageable
+
+Firstly we checked if there were any null values in the dataset. Then we removed the duplicate rows because there was no way of telling whether their presence meant that a song entered the top 100 in multiple years or because it was just wrongly put in the dataset.
+
+```{r}
+# Check of missing and duplicated values
+sum(is.na(data))
+sum(duplicated(data))
+
+# Remove duplicated values
+duplicated_rows <- duplicated(data)
+data <- data[!duplicated_rows, ]
+sum(is.na(data))
+sum(duplicated(data))
+
+# Remove outlying songs based on the years (there are just a couple of songs for the years 1998 and 2020)
+summary(data)
+```
+
+### Removal of outlying years
+
+We wanted to see the distribution of the songs throughout the years, once we did we observed the presence of just a small amount of songs in the years 1998 (1 song) and 2020 (3 songs), which could be dangerous to keep for further modelling, so we removed them.
+
+```{r}
+data_by_year <- data %>%
+  group_by(year) %>%
+  summarise(count = n())
+print(data_by_year)
+```
+
+```{r}
+data <- data %>%
+  filter(year >= 1999 & year <= 2019)
+data_by_year <- data %>%
+  group_by(year) %>%
+  summarise(count = n())
+print(data_by_year)
+```
+
+### Rescaling and transformation on columns
+
+We noticed that many columns with a certain supposed range (e.g: popularity, which seemingly is supposed to be from 0 to 100, in the dataset has as maximum value 89) are far from reaching the maximum supposed value. For visualization purposes we rescaled such values, in order to have a better understanding of the data.
+
+```{r}
+# Function that scales the given column to the given maximum value
+rescale_col <- function(column_name, max_value, data) {
+  coeff <- max(data[[column_name]])
+  data[[column_name]] <- (data[[column_name]] / coeff) * max_value
+  return(data)
+}
+
+# Rescale columns
+data <- rescale_col("popularity", 100, data)
+data <- rescale_col("acousticness", 1.0, data)
+data <- rescale_col("danceability", 1.0, data)
+data <- rescale_col("instrumentalness", 1.0, data)
+data <- rescale_col("speechiness", 1.0, data)
+```
+
+Next step was to transform the duration from milliseconds to minutes (being more human-understandable) and to map the boolean values of the column "explicit" to 0 and 1
+
+```{r}
+data <- data %>%
+  mutate(explicit = ifelse(explicit == TRUE, 1, 0)) %>%
+  mutate(duration_min = duration_ms/60000)
+data <- data[, -which(names(data) == "duration_ms")]
+print(head(data), 5)
+```
+
+After that we also noticed that the column "genre" had in 22 of its rows the value "set()".
+
+```{r}
+unique_genres <- unique(data$genre)
+print(unique_genres)
+```
+
+```{r}
+num_rows <- sum(data$genre == "set()")
+print(num_rows)
+```
+
+Since we had no clue about why those songs were of set() genre, we treated those songs as if they were "null", therefore we removed them in order not to influence eventual plots or models.
+
+```{r}
+data <- data[data$genre != "set()",]
+num_rows <- sum(data$genre == "set()")
+print(num_rows)
+```
+
+At last, having noticed a big variety of genres that a single song can have, we decided to split the "genre" column by performing one-hot-encoding and, since they become column names, we rename them by removing the spaces and special symbols.
+
+```{r}
+data_long <- data %>%
+  separate_rows(genre, sep = ",")
+
+data_long$genre <- trimws(data_long$genre)
+
+data <- data_long %>%
+  mutate(value = 1) %>%
+  spread(key = genre, value = value, fill = 0)
+
+
+data <- data %>% rename("Dance_Electronic" = "Dance/Electronic")
+data <- data %>% rename("easy_listening" = "easy listening")
+data <- data %>% rename("hip_hop" = "hip hop")
+data <- data %>% rename("R_and_B" = "R&B")
+data <- data %>% rename("Folk_Acoustic" = "Folk/Acoustic")
+data <- data %>% rename("World_Traditional" = "World/Traditional")
+
+head(data)
+summary(data)
+```
+
+## Exploratory data analysis
+
+### Distribution of the variables
+
+Plotting the distribution of the variables could potentially give useful insights regarding the characteristics of the hit songs. Below can be found all the plots of the numerical / boolean features
+
+```{r , fig.width=14, fig.height=14}
+
+#COlumns that with a binwidth of 1 would be all distributed in 1 or very few bins (e.g: columns with value between 0 and 1)
+low_value_columns <- list("danceability", "energy", "speechiness", "acousticness", "instrumentalness", "valence", "duration_min", "liveness", "speechiness")
+boolean_columns <- list("explicit", "mode")
+genre_columns <- tail(names(data), n=14)
+print(genre_columns)
+
+
+plots_list <- lapply(names(data), function(column_name){
+  if(is.numeric(data[[column_name]])){
+    if(column_name %in% low_value_columns){
+      p <- ggplot(data, aes_string(column_name)) +
+        geom_histogram(binwidth = 0.05, fill = 'blue', color = 'black') +
+        labs(x = column_name, y = "Count", title = paste("Histogram of", column_name))
+    }else if(column_name %in% boolean_columns){
+      to_plot <- as.factor(data[[column_name]])
+      p <- ggplot(data, aes_string(to_plot)) +
+        geom_bar() +
+        scale_x_discrete(breaks=c("0", "1")) +
+        labs(x=column_name, y="Count", title=paste("Distribution of", column_name), )
+    }else if(column_name %in% genre_columns){
+      return(NULL)
+    }else{
+      p <- ggplot(data, aes_string(column_name)) +
+        geom_histogram(binwidth = 1, fill = 'blue', color = 'black') +
+        labs(x = column_name, y = "Count", title = paste("Histogram of", column_name))
+    }
+    return(p)
+  }
+})
+
+plots_list <- plots_list[!sapply(plots_list, is.null)]
+do.call(grid.arrange, plots_list)
+
+```
+
+Observing the distributions of the numerical / boolean variables, we arrived to the following insights:
+
+-   Only one quarter of the songs contain explicit content: can be due to the fact that the radios and broadcasting services may not pick the songs containing explicit lyrics and characteristics, due to the desire to spread the song among all kinds of listeners, young people included
+
+-   There are many songs having very low values of popularity. The only reason could be that they were taken from another dataset, having a different scale. In order for the classification to work, there shouldn't be those values, which will be later removed
+
+-   Songs having a high energy coefficient are more likely to be top hits, same goes for danceability
+
+-   Having low speechiness, acousticness, instrumentalness and liveness can result in a bigger likelihood of getting in the top charts
+
+### Genres distribution
+
+Now that we observed the distribution of the numerical features, we wanted also to see which ones were the most popular genres, and we got the following results:
+
+```{r}
+
+# Select only the genre columns
+print(names(data))
+genre_data <- data[, (ncol(data)-13):ncol(data)]
+
+# Convert the data from wide to long format
+genre_long <- genre_data %>%
+  mutate(id = row_number()) %>%
+  gather(key = "Genre", value = "Count", -id)
+
+# Summarize the data
+genre_summary <- genre_long %>%
+  group_by(Genre) %>%
+  summarise(Count = sum(Count))
+
+# Plot
+ggplot(genre_summary, aes(x = reorder(Genre, +Count), y = Count)) +
+  geom_bar(stat = "identity", fill = "#800080") +
+  labs(x = "Genre", y = "Count") +
+  theme_bw() +
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip() 
+```
+
+Out of these counts, we can notice that more than 3/4 of the songs were labeled as pop, and even though we did except a dominance or a big presence of the pop genre, we would've never guessed such dominance.
+
+Followed by pop we have hip hop and R&B, Dance/Electronic and Rock. In the top 5 genres we were expecting to get latin music, which is a very popular kind of music especially in the warm seasons of the year, but to our surprise it's ranked just at the 7th place.
+
+### Genres average popularity
+
+Having observed the distribution of the genres, we wanted to find out the average popularity of those genres. The plot that we obtained is the following:
+
+```{r}
+# Select only the genre and popularity columns
+popularity_index <- which(names(data) == "popularity")
+genre_data <- data[, c(popularity_index, (ncol(data)-13):ncol(data))]
+
+# Convert the data from wide to long format
+genre_long <- genre_data %>%
+  mutate(id = row_number()) %>%
+  gather(key = "Genre", value = "Value", -id, -popularity)
+
+# Filter out rows where Value is 0 (i.e., the song does not belong to the genre)
+genre_long <- genre_long[genre_long$Value == 1, ]
+
+# Calculate average popularity for each genre
+genre_avg_popularity <- genre_long %>%
+  group_by(Genre) %>%
+  summarise(Avg_Popularity = mean(popularity))
+
+genre_avg_popularity_ordered <- merge(genre_summary, genre_avg_popularity, by.x = "Genre", by.y = "Genre")
+
+# Plot
+ggplot(genre_avg_popularity_ordered, aes(x = reorder(Genre, +Count), y = Avg_Popularity)) +
+  geom_line(group = 1) +
+  labs(x = "Genre", y = "Average Popularity") +
+  theme_bw() +
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
+```
+
+The aforementioned top 5 of the genres is seen to have an average popularity lower than expected, between 60 and 70. There are several assumptions that could be done regarding the reason behind these results: one could be that for more common genres such pop, hip-hop or R&B there is a lower popularity value needed, since it is "easier" for those songs to enter the charts; another one could be that the popularity could be calculated as active_listeners / total_listeners (e.g: a pop is listened by 100'000 people, out of which only 1000 really listen actively to that song, whereas a metal song is listened by 1000, but of those 800 listen many times to that song). There is way of knowing for sure which one is right or not, therefore no conclusions can be made with certainty
+
+### Top 10 artists with more songs in the dataset
+
+Having thoroughly analysed genres and their popularities, now it's the turn of the artist to be explored. Here can be seen a plot showing the 10 artists that have released more hit songs throughout the years.
+
+```{r}
+# Count the frequency of each artist
+artist_counts <- head(sort(table(data$artist), decreasing = TRUE), 10)
+
+# Convert to data frame for plotting
+artist_counts_df <- as.data.frame(artist_counts)
+names(artist_counts_df) <- c("artist", "count")
+
+# Plot
+ggplot(artist_counts_df, aes(x = reorder(artist, +count), y = count)) +
+  geom_bar(stat = "identity", fill = "#800080") +
+  labs(x = "Artist", y = "Count") +
+  theme_bw() +
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
+```
+
+### Average popularity of top 10 artists
+
+Same as for the genres, we wanted to see what is the average popularity of the top artists in the dataset
+
+```{r}
+# Calculate average popularity for each artist
+avg_popularity <- data %>%
+  group_by(artist) %>%
+  summarise(avg_popularity = mean(popularity, na.rm = TRUE))
+
+# Merge with artist_count_df to maintain the same order
+avg_popularity_ordered <- merge(artist_counts_df, avg_popularity, by.x = "artist", by.y = "artist")
+
+# Plot
+ggplot(avg_popularity_ordered, aes(x = reorder(artist, +count), y = avg_popularity)) +
+  geom_line(group = 1) +
+  labs(x = "Artist", y = "Average Popularity") +
+  theme_bw() +
+  theme(text = element_text(size = 12),
+        axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
+```
+
+If Rihanna and Eminem meet the expectations of having an averagely higher popularity w.r.t the number of songs, there are others like Drake, Britney Spears and others who fall a bit below the expected popularity, as confirmed also from the approximated linear regression below, based on the amount of songs and on the popularity.
+
+```{r}
+# Join the two dataframes on the "artist" column
+data_artists_vs_popularity <- inner_join(artist_counts_df, avg_popularity, by = "artist")
+
+# Plot data
+ggplot(data_artists_vs_popularity, aes(x = count, y = avg_popularity, label = artist)) +
+  geom_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed") +
+  geom_point(size = 2, color = 'steelblue') +
+  geom_text(size = 4)+
+  labs(
+    title = "Number of Songs vs Average Popularity for Top 10 Artists",
+    x = "Number of Songs",
+    y = "Average Popularity"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5)
+  )
+```
+
+### Average duration of the songs per year
+
+Since it's evident that time has changed and shortened averagely the attention-span of a listener, we wanted to confirm if such change in pattern would also apply for the case of the average duration of the songs per year. Below a plot showcasing the answer to the question, which confirms our expectations
+
+```{r}
+# Plot YEAR vs DURATION 
+
+# Calculate the mean duration by year
+year_data <- aggregate(duration_min ~ year, data, mean)
+ggplot(year_data, aes(x = year, y = duration_min)) +
+  geom_line(stat = "identity", fill = "steelblue") +
+  labs(x = "Year", y = "Duration (minutes)") +
+  theme_bw() +
+  theme(text = element_text(size = 20))
+```
+
+### Top 10 most popular songs
+
+Having now analysed every top 10 possible, the last one remaining that one could ask is for the top 10 of the most popularly evaluated songs. The results are quite surprising:
+
+```{r}
+# PlOT 10 MOST POPULAR SONGS
+
+# Select the top 10 songs based on popularity and sort in descending order
+
+
+# Subset and process data
+top_songs <- data %>%
+  select(artist, song, popularity, valence) %>%
+  mutate(artist_song = paste(artist, song, sep = " - ")) %>%
+  arrange(desc(popularity)) %>%
+  head(10)
+
+# Plot data
+ggplot(top_songs, aes(x = reorder(artist_song, -popularity), y = popularity)) +
+  geom_line(stat = 'identity', fill = '#800080', group=1) +
+  labs(
+    title = "Top 10 Popular Songs",
+    x = "Artist - Song",
+    y = "Popularity"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 60, hjust = 1, size = 8)
+  )
+```
+
+Despite the age or the musical culture of each person, these songs were certainly not the ones expected as far as popularity goes. Even though many songs out of this top 10 are certainly recognizable by the majority of music listeners, there are many that even an up-to-date person might not recognize, like the two The Neighbourhood songs or the WILLOW one. This assumption doesn't want to undermine these songs, but there are many other candidates for the big top 10, like Pharrel Williams - Happy, or Someone Like You by Adele, and many others.
+
+A possible reason that we found for such a popularity evaluation is that, after studying these songs, they are very popular especially on social media such as Instagram, Twitter and so on. Those single listens might influence the overall popularity, which may in fact include the social media interaction with those songs.
+
+### Valence of top 10 songs
+
+Out of the many features characterizing every song, we wanted to investigate a possible correlation of ending in the top 10 popular songs and having a certain valence, which indicates whether the song is cheerful/happy or sad/depressed. To understand it we picked the top 10 songs previously found and we plotted their value of valence
+
+```{r}
+ggplot(top_songs, aes(x = reorder(artist_song, -popularity), y = valence)) +
+  geom_line(stat = 'identity', fill = '#800080', group=1) +
+  labs(
+    title = "Valence of top 10 Popular Songs",
+    x = "Artist - Song",
+    y = "Valence"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8)
+  )
+```
+
+As can be observed, for a song is not important to be giving out happy or sad vibes, since half of the songs have a low value of valence (\< 0.5) and the other half has a high valence (\> 0.5)
+
+### Correlation matrix
+
+As last visualization we decided to go for the general correlation matrix, which gives us the possibility of seeing whether there exists a strong correlation between one or more features.
+
+```{r}
+# Correlation matrix
+
+# Select only numeric columns from the dataset
+numeric_data <- data[, sapply(data, is.numeric)]
+numeric_data <- numeric_data[,1:(ncol(numeric_data)-14)]
+
+cor_matrix <- cor(numeric_data)
+
+corrplot(cor_matrix, method = "color", type = "upper", order = "hclust", 
+         tl.cex = 0.7, tl.col = "black")
+```
+
+The final results don't indicate anything regarding any correlation for the popularity column, which is the one that will be chosen as target variable for the regression model, therefore it is expectable from the model to perform poorly. As far as other correlations go (leaving aside obvious correlations such as energy-loudness), there can be seen some light correlations between the future classification target variable explicit and others like speechiness, danceability and energy. Since
+
+## Modelling: Regression methods for predicting the popularity of a song
+
+### Pre-Processing
+
+Before proceeding to the modelling, some pre-processing is needed to ensure that the data is on the same scale and that it's ready for the various models trainings.
+
+For this task we performed a standardization on the numerical data, removed the categorical columns "artist" and "song" and removed the data having popularity's outliers, since there are many that revolve between 0 and 1. We havent removed all the rows containing outliers because the training dataset would be reduced to approximately 450-500 rows.
+
+```{r}
+# Popularity outliers removal
+print(paste("Values of popularity between 0 and 1:",sum(data$popularity <= 1)))
+# For each column, remove rows where the column's value is an outlier
+Q1 <- quantile(data[["popularity"]], 0.25, na.rm = TRUE)
+Q3 <- quantile(data[["popularity"]], 0.75, na.rm = TRUE)
+IQR <- Q3 - Q1
+# below in model_data filtering: | model_data[["popularity"]] > (Q3 + 1.5 * IQR))
+data <- data[!(data[["popularity"]] < (Q1 - 1.5 * IQR) | data[["popularity"]] > (Q3 + 1.5 * IQR)), ]
+print(paste("Min popularity after outliers removal:", min(data$popularity)))
+```
+
+```{r}
+# Standardization of data
+numeric_cols <- c("year", "danceability", "energy", "key", "loudness", "speechiness",
+                  "acousticness", "instrumentalness", "liveness", "valence", "tempo", "duration_min")
+
+model_data <- data %>%
+  mutate(across(all_of(numeric_cols), scale))
+
+# Removal of artist and song features
+model_data <- model_data %>% select(-artist, -song)
+```
+
+### Splitting of the data
+
+The split into train and test is done with a proportion of 0.75 and 0.25 respectively for train and test
+
+```{r}
+set.seed(24)
+
+data_split <- model_data %>% initial_split(prop=0.75)
+train_set <- training(data_split)
+test_set <- testing(data_split)
+```
+
+### Linear Regression
+
+Here the Linear Regression model is trained. The training is made by the following steps:
+
+Create a recipe, meaning which variables would be used for which target.
+
+```{r}
+data_recipe_linear <- recipe(popularity~., data=train_set)
+```
+
+Next, the model itself by specifying the engine and the mode
+
+```{r}
+lin_reg_spec <- linear_reg() %>% set_engine("lm") %>%
+  set_mode("regression")
+```
+
+The model specification needs then to be combined with the recipe into a single workflow function, that can be fit to the data all at once
+
+```{r}
+lin_reg_wflow <- workflow() %>% add_recipe(data_recipe_linear) %>%
+  add_model(lin_reg_spec)
+
+lin_reg_fit_wflow <- lin_reg_wflow %>% fit(train_set)
+```
+
+Once the model is fitted, we can extract the details of the model object from the workflow.
+
+```{r, fig.width=10, fig.height=10}
+lin_reg_fit_engine <- lin_reg_fit_wflow %>%
+  extract_fit_engine()
+lin_reg_fit_engine %>% summary()
+
+
+lin_reg_fit_engine %>% check_model()
+```
+
+Lastly we can get the metrics of the model once it was used to predict the test_set
+
+```{r, fig.width=7, fig.height=7}
+lin_reg_predictions <- predict(lin_reg_fit_wflow, new_data = test_set) %>%
+  bind_cols(test_set)
+
+# Calculate RMSE
+lin_reg_metrics <- metrics(lin_reg_predictions, truth = popularity, estimate = .pred)
+print(lin_reg_metrics)
+
+```
+
+### Lasso Regression
+
+Compared to the classic linear regression, Lasso takes care of distributing the weights and performing feature selection by possibly assigning a weight of 0 to the feature, if considered useless for the model.
+
+Since there is a parameter that could be tuned, the L1 penalty, we performed a grid search that fins the best penalty value and a 10 fold cross-validation.
+
+As before, a workflow is created that combines the formula of prediction and the model specification.
+
+Once the tuning of the parameter is performed, the best model is returned and used to predict the test_set
+
+```{r}
+lasso_spec <- linear_reg(penalty = tune(), mixture = 1) %>%
+  set_engine("glmnet")
+
+lasso_grid <- grid_regular(
+  penalty(range = c(0.001, 0.1)),
+  levels = 10
+)
+
+cv <- vfold_cv(train_set, v = 10)
+
+lasso_workflow <- workflow() %>%
+  add_model(lasso_spec) %>%
+  add_formula(popularity ~ .)
+
+lasso_results <- tune_grid(
+  lasso_workflow,
+  resamples = cv,
+  grid = ridge_grid
+)
+
+best_lasso_params <- lasso_results %>%
+  select_best(metric = "rmse")
+
+best_lasso_model <- lasso_spec %>%
+  finalize_model(best_lasso_params)
+
+best_lasso_fit <- fit(best_lasso_model, popularity ~ ., data = train_set)
+
+best_lasso_preds <- predict(best_lasso_fit, new_data = test_set)
+best_lasso_metrics <- metrics(bind_cols(test_set, best_lasso_preds), truth = popularity, estimate = .pred)
+
+print(best_lasso_metrics)
+```
+
+### Ridge Regression
+
+In this dataset both Lasso and Ridge regression models make sense to be used, that is because Lasso annihilates useless features and automatically performs feature selection by assigning weight 0 to the features. Ridge on the other hand is useful in case of presence of linear relations between predictor variables, which is the case here as we saw from the confusion matrix.
+
+The implementation of the model is exactly the same as for the Lasso, but instead of the parameter mixture assigned to 1 when creating the model, for the model to apply L2 penalty we need to set mixture to 0.
+
+```{r}
+ridge_spec <- linear_reg(penalty = tune(), mixture = 0) %>%
+  set_engine("glmnet")
+
+ridge_grid <- grid_regular(
+  penalty(range = c(0.001, 0.1)),
+  levels = 10
+)
+
+cv <- vfold_cv(train_set, v = 10)
+
+ridge_workflow <- workflow() %>%
+  add_model(ridge_spec) %>%
+  add_formula(popularity ~ .)
+
+ridge_results <- tune_grid(
+  ridge_workflow,
+  resamples = cv,
+  grid = ridge_grid
+)
+
+best_ridge_params <- ridge_results %>%
+  select_best(metric = "rmse")
+
+best_ridge_model <- ridge_spec %>%
+  finalize_model(best_ridge_params)
+
+best_ridge_fit <- fit(best_ridge_model, popularity ~ ., data = train_set)
+
+best_ridge_preds <- predict(best_ridge_fit, new_data = test_set)
+best_ridge_metrics <- metrics(bind_cols(test_set, best_ridge_preds), truth = popularity, estimate = .pred)
+
+print(best_ridge_metrics)
+```
+
+### Decision Tree Regression
+
+Usually a Decision Tree is used for classification tasks, but it can also be used for regression problems, which is what we do here. That is because it can catch non-linear relationships between predictors and target, and another good aspect is the interpretability if needed.
+
+Same procedure as for the Lasso Regression: specification of the engine, tuning of the parameters, cross-validation, evaluation of the best obtained model on the test_set
+
+```{r}
+# Specify a Decision Tree model
+tree_spec <- decision_tree(mode = "regression") %>%
+  set_engine("rpart")
+
+# Define a grid of hyperparameters to tune
+tree_grid <- grid_regular(
+  cost_complexity(range = c(0.01, 0.1)),
+  tree_depth(range = c(1, 20)),
+  min_n(range = c(1, 20)),
+  levels = 20
+)
+
+# Define a resampling strategy
+cv <- vfold_cv(train_set, v = 10)
+
+# Combine the model, grid, and resampling strategy in a tuning workflow
+tree_workflow <- workflow() %>%
+  add_model(tree_spec) %>%
+  add_formula(popularity ~ .)
+
+# Perform the tuning
+tree_results <- tune_grid(
+  tree_workflow,
+  resamples = cv,
+  grid = tree_grid
+)
+
+# Find the best parameters
+best_tree_params <- tree_results %>%
+  select_best(metric = "rmse")
+
+# Update the model with the best parameters
+best_tree_model <- tree_spec %>%
+  finalize_model(best_tree_params)
+
+# Retrain the model with the best parameters
+best_tree_fit <- fit(best_tree_model, popularity ~ ., data = train_set)
+
+# Evaluate the model
+best_tree_preds <- predict(best_tree_fit, new_data = test_set)
+best_tree_metrics <- metrics(bind_cols(test_set, best_tree_preds), truth = popularity, estimate = .pred)
+
+print(best_tree_metrics)
+```
+
+### Random Forest Regression
+
+A Random Forest Regression model can be preferred with respect to the other models for the same reasons as the Decision Tree (since a Random Forest is essentially a collection of many trees), meaning because that it can catch non-linear and complex relationships.
+
+The pipeline w.r.t the previous models doesn't change.
+
+```{r}
+rf_spec <- rand_forest(mode = "regression") %>%
+  set_engine("randomForest")
+
+rf_grid <- grid_regular(
+  mtry(range = c(1, ncol(train_set))),
+  trees(range = c(100, 500)),
+  min_n(range = c(1, 100)),
+  levels = 5
+)
+
+cv <- vfold_cv(train_set, v = 5)
+
+rf_workflow <- workflow() %>%
+  add_model(rf_spec) %>%
+  add_formula(popularity ~ .)
+
+rf_results <- tune_grid(
+  rf_workflow,
+  resamples = cv,
+  grid = rf_grid
+)
+
+best_rf_params <- rf_results %>%
+  select_best(metric = "rmse")
+
+best_rf_model <- rf_spec %>%
+  finalize_model(best_rf_params)
+
+best_rf_fit <- fit(best_rf_model, popularity ~ ., data = train_set)
+
+best_rf_preds <- predict(best_rf_fit, new_data = test_set)
+
+best_rf_metrics <- metrics(bind_cols(test_set, best_rf_preds), truth = popularity, estimate = .pred)
+
+print(best_rf_metrics)
+```
+
+### Top regression models
+
+In the cell below can be seen the two main metrics that we used to evaluate the regression model: RMSE (Root Mean Squared Error) and RSQ (R squared).
+
+The first indicates the average error between predicted and actual values. It is calculated by taking the sum of squares of the differences between true and predicted values, and then takes the square root of such sum. It penalizes more the outliers since squaring larger errors gives back larger square root.
+
+The second indicates the proportion of the variance for a dependent variable (target) that's explained by an independent variable or variables in a regression model (predictors).
+
+```{r}
+print(paste("Linear Regression RMSE and R^2:", lin_reg_metrics %>% filter(.metric == "rmse") %>% pull(.estimate), ",", lin_reg_metrics %>% filter(.metric == "rsq") %>% pull(.estimate)))
+print(paste("Ridge Regression RMSE and R^2:", best_ridge_metrics %>% filter(.metric == "rmse") %>% pull(.estimate), ",", best_ridge_metrics %>% filter(.metric == "rsq") %>% pull(.estimate)))
+print(paste("Lasso Regression RMSE and R^2:", best_lasso_metrics %>% filter(.metric == "rmse") %>% pull(.estimate), ",", best_lasso_metrics %>% filter(.metric == "rsq") %>% pull(.estimate)))
+print(paste("Decision Tree RMSE and R^2:", best_tree_metrics %>% filter(.metric == "rmse") %>% pull(.estimate), ",", best_tree_metrics %>% filter(.metric == "rsq") %>% pull(.estimate))) 
+print(paste("Random Forest RMSE and R^2:", best_rf_metrics %>% filter(.metric == "rmse") %>% pull(.estimate), ",", best_rf_metrics %>% filter(.metric == "rsq") %>% pull(.estimate)))
+```
+
+From these metrics we can conclude that:
+
+-   All the models perform very poorly on the popularity target. The assumption for why all the models cannot predict well the popularity is that a very large variety of songs, in terms of its features, can reach the same popularity, whether its a classical song or a pop song, whether its happy or sad, and so on.
+
+-   Out of these models the best one, both for RMSE and R\^2, is the Ridge Regression model. It doesn't differ much from the classic Linear Regression, so if one had to be picked, we would go for the Linear Regression because of computational simplicity of fitting the model, since Ridge Regression requires L2 regularization
+
+-   Surprisingly the Lasso Regression, even though it's supposed to perform feature selection, performs worse than the Linear Regression.
+
+-   Despite having many correlations between the predicting features, both Decision Tree and Random Forest regression perform as poorly as the other models.
+
+```{r}
+lin_reg_residuals <- test_set$popularity - lin_reg_predictions$.pred
+tree_residuals <- test_set$popularity - best_tree_preds$.pred
+rf_residuals <- test_set$popularity - best_rf_preds$.pred
+ridge_residuals <- test_set$popularity - best_ridge_preds$.pred
+lasso_residuals <- test_set$popularity - best_lasso_preds$.pred
+
+residuals_df <- data.frame(
+  TrueValues = c(test_set$popularity, test_set$popularity, test_set$popularity, test_set$popularity, test_set$popularity),
+  Residuals = c(lin_reg_residuals, tree_residuals, rf_residuals, ridge_residuals, lasso_residuals),
+  Model = c(rep("Linear Regression", length(lin_reg_residuals)),
+            rep("Decision Tree", length(tree_residuals)), 
+            rep("Random Forest", length(rf_residuals)),
+            rep("Ridge Regression", length(ridge_residuals)),
+            rep("Lasso Regression", length(lasso_residuals)))
+)
+# For Linear Regression
+ggplot(subset(residuals_df, Model == "Linear Regression"), aes(x = TrueValues, y = Residuals, color = Model)) +
+  geom_point(alpha = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  theme_minimal() +
+  labs(title = "Residuals of Linear Regression",
+       x = "True Values",
+       y = "Residuals",
+       color = "Model")
+
+# For Decision Tree
+ggplot(subset(residuals_df, Model == "Decision Tree"), aes(x = TrueValues, y = Residuals, color = Model)) +
+  geom_point(alpha = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  theme_minimal() +
+  labs(title = "Residuals of Decision Tree",
+       x = "True Values",
+       y = "Residuals",
+       color = "Model")
+
+# For Random Forest
+ggplot(subset(residuals_df, Model == "Random Forest"), aes(x = TrueValues, y = Residuals, color = Model)) +
+  geom_point(alpha = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  theme_minimal() +
+  labs(title = "Residuals of Random Forest",
+       x = "True Values",
+       y = "Residuals",
+       color = "Model")
+
+# For Ridge Regression
+ggplot(subset(residuals_df, Model == "Ridge Regression"), aes(x = TrueValues, y = Residuals, color = Model)) +
+  geom_point(alpha = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  theme_minimal() +
+  labs(title = "Residuals of Ridge Regression",
+       x = "True Values",
+       y = "Residuals",
+       color = "Model")
+
+ggplot(subset(residuals_df, Model == "Lasso Regression"), aes(x = TrueValues, y = Residuals, color = Model)) +
+  geom_point(alpha = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  theme_minimal() +
+  labs(title = "Residuals of Lasso Regression",
+       x = "True Values",
+       y = "Residuals",
+       color = "Model")
+```
+
+From the residuals plots above, one for every model, we can observe a very clear linearity and correlation between residuals and the target's distribution: having noticed a normal distribution of the popularity column in the exploratory data analysis, we can assume that the residuals are directly proportionate to the popularity's value. The less the popularity is, the less the residuals are, and with higher popularity we have an averagely higher value of the residuals.
+
+This problem can be due to the fact that in the two tails of the popularity distribution we have much less data, which makes the predictions less accurate, whereas in the range of popularity where there is more data, the predictions are more accurate
+
+## Modelling: Classification methods for
+
+### Pre-Processing
+
+```{r}
+# Select the columns to be normalized
+features <- c("year", "danceability", "energy", "key", "loudness", "speechiness",
+              "acousticness", "instrumentalness", "liveness", "valence", "tempo", 
+              "duration_min")
+
+# Applying Min-Max normalization using sapply
+normalized_data <- data  # copy of the original data
+
+# Exclude from the models columns artist and song
+normalized_data <- normalized_data %>% select(all_of(features), explicit)
+
+
+normalized_data[features] <- sapply(data[features], function(x) {
+  (x - min(x)) / (max(x) - min(x))
+})
+
+# see results
+summary(normalized_data)
+```
+
+```{r}
+library(tidymodels)
+library(rsample)
+library(caret)
+
+normalized_data$explicit <- as.factor(normalized_data$explicit)
+
+set.seed(123)
+split <- initial_split(normalized_data, prop=0.75, strata="explicit")
+train_data <- training(split) %>% select(danceability, energy, loudness, speechiness, acousticness, instrumentalness, liveness, valence, tempo, explicit)
+test_data <- testing(split) %>% select(danceability, energy, loudness, speechiness, acousticness, instrumentalness, liveness, valence, tempo, explicit)
+```
+
+```{r}
+# Define a logistic regression model
+glm_spec <- logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
+
+# Define a workflow that includes the model and a formula for the prediction task
+glm_wflow <- workflow() %>%
+  add_model(glm_spec) %>%
+  add_formula(explicit ~ .)
+
+# Fit the model using the training data
+glm_fit_wflow <- glm_wflow %>%
+  fit(data = train_data)
+
+# Train the model
+trained_model <- fit(glm_spec, data = train_data, explicit ~ .)
+
+# Predict the "explicit" column for the test data
+predictions <- predict(trained_model, test_data) %>%
+  bind_cols(test_data)
+
+# Calculate accuracy
+accuracy <- sum(predictions$explicit == predictions$.pred_class) / nrow(predictions)
+
+# Print the results
+cat("Accuracy:", accuracy)
+
+explicit_test_pred <- glm_fit_wflow %>% augment(test_data)
+yardstick::accuracy(explicit_test_pred,truth = explicit, estimate=.pred_class)
+
+roc_curve(explicit_test_pred,
+          explicit,.pred_1,
+          event_level = "second") %>% 
+  autoplot()
+
+# glm_fit_wflow %>% predict(test_data, type="prob")
+```
+
+```{r}
+# false positive
+explicit_test_pred %>%
+  mutate(errorFP =if_else(.pred_class==1 & explicit==0,1,0)) %>%
+  summarise(sum(errorFP)) %>% pull()
+
+# false negative
+explicit_test_pred %>%
+  mutate(errorFN =if_else(.pred_class==0 & explicit==1,1,0)) %>%
+  summarise(sum(errorFN)) %>% pull()
+
+cm <- explicit_test_pred %>%
+  conf_mat(truth=explicit,estimate=.pred_class)
+```
+
+```{r}
+# Calculate predicted probabilities for test data
+predictions <- predict(trained_model, test_data, type = "prob")
+# Convert to factors and specify levels
+predicted_labels <- factor(predicted_labels, levels = c(0, 1))
+true_labels <- factor(true_labels, levels = c(0, 1))
+
+# Then create the confusion matrix
+cm <- confusionMatrix(predicted_labels, true_labels)
+print(cm)
+```
